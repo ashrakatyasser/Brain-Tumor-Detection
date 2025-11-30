@@ -157,51 +157,35 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-import os
-import sys
-
-# Handle deployment environment
-try:
-    import ultralytics
-except ImportError as e:
-    print(f"Import warning: {e}")
-    # Continue without ultralytics for fallback mode
-
-# Add this to your load_yolo_model function to be more deployment-friendly
 @st.cache_resource
 def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
     """Load YOLOv8 model safely and cache it."""
     try:
-        # For deployment, use relative path
-        if not os.path.exists(path):
-            # Try to find the file in different locations
-            possible_paths = [
-                path,
-                f"./{path}",
-                f"app/{path}",
-                f"./app/{path}"
-            ]
-            
-            for test_path in possible_paths:
-                if os.path.exists(test_path):
-                    path = test_path
-                    break
-            else:
-                st.warning(f"Model file not found. Using fallback mode.")
-                return None
+        # Debug info
+        current_dir = os.getcwd()
+        st.sidebar.info(f"Current directory: {current_dir}")
         
-        # Rest of your existing function...
-        file_size = os.path.getsize(path)
-        if file_size < 1024:
-            st.warning("Model file appears too small. Using fallback mode.")
+        if not os.path.exists(path):
+            st.sidebar.error(f" Model file not found: {path}")
+            st.sidebar.info(f"Looking in: {os.path.abspath(path)}")
             return None
-            
+        
+        file_size = os.path.getsize(path)
+        st.sidebar.info(f" Model file found: {file_size} bytes")
+        
+        if file_size < 1024:
+            st.sidebar.error(f" Model file too small: {file_size} bytes")
+            return None
+        
+        st.sidebar.info("Loading YOLO model...")
         model = YOLO(path)
-        st.success(" YOLO model loaded successfully")
+        st.sidebar.success(" YOLO model loaded successfully!")
+        logger.info("YOLO model loaded successfully from %s", path)
         return model
         
     except Exception as exc:
-        st.warning(f"Model loading failed: {str(exc)}. Using fallback mode.")
+        st.sidebar.error(f" Error loading model: {str(exc)}")
+        logger.exception("Error loading YOLO model: %s", exc)
         return None
 
 
@@ -739,5 +723,4 @@ def fallback_yolo_results() -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-
     main()
