@@ -189,6 +189,7 @@ def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
         return None
 
 
+
 def validate_file(file: Any) -> Tuple[bool, str]:
     """Check extension and basic size limit."""
     if file is None:
@@ -724,3 +725,4 @@ def fallback_yolo_results() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     main()
+
