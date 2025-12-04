@@ -17,6 +17,7 @@ from ultralytics import YOLO
 
 # ---------- Configuration ----------
 YOLO_MODEL_PATH = "yolov8_model.pt"
+YOLO_MODEL_URL = "YOUR_DIRECT_DOWNLOAD_URL_HERE"  # If using external hosting
 ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png")
 
 # ---------- Logging ----------
@@ -141,6 +142,12 @@ st.markdown("""
 def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
     """Load YOLOv8 model safely and cache it."""
     try:
+        # Download model if not exists (for external hosting)
+        if not os.path.exists(path) and YOLO_MODEL_URL:
+            st.info("Downloading model... This may take a minute.")
+            import urllib.request
+            urllib.request.urlretrieve(YOLO_MODEL_URL, path)
+        
         if not os.path.exists(path):
             return None
         
