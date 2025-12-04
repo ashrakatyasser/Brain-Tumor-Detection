@@ -13,4 +13,5 @@ scipy>=1.4.1
 tqdm>=4.64.0
 psutil
 seaborn>=0.11.0
+py-cpuinfo
 ultralytics>=8.0.0
