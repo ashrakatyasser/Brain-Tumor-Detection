@@ -1,9 +1,6 @@
-# app.py
 """
 NeuroScan AI - Brain Tumor Detection with YOLO
-- Uses YOLOv8 model for object detection and classification
-- Dark/light mode compatible styling
-- Professional medical aesthetic
+Streamlined version for end users
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -31,7 +28,7 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-# ---------- Page config & CSS ----------
+# ---------- Page Config & CSS ----------
 st.set_page_config(
     page_title="NeuroScan AI - Brain Tumor Analysis", 
     layout="wide", 
@@ -55,14 +52,6 @@ st.markdown("""
             border-radius: 12px;
             border: 1px solid var(--border-color);
             margin: 10px 0;
-        }
-        .upload-area {
-            border: 2px dashed #009688;
-            border-radius: 12px;
-            padding: 30px 20px;
-            text-align: center;
-            background-color: var(--secondary-background-color);
-            margin: 18px 0;
         }
         .metric-card {
             background-color: var(--background-color);
@@ -144,15 +133,6 @@ st.markdown("""
             background: linear-gradient(90deg, #0066CC, #009688);
             border-radius: 4px;
         }
-        .detection-badge {
-            display: inline-block;
-            background: #2196F3;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            margin-left: 8px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -161,36 +141,29 @@ st.markdown("""
 def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
     """Load YOLOv8 model safely and cache it."""
     try:
-        # Debug info
-        current_dir = os.getcwd()
-        st.sidebar.info(f"Current directory: {current_dir}")
-        
         if not os.path.exists(path):
-            st.sidebar.error(f" Model file not found: {path}")
-            st.sidebar.info(f"Looking in: {os.path.abspath(path)}")
             return None
         
-        file_size = os.path.getsize(path)
-        st.sidebar.info(f" Model file found: {file_size} bytes")
+        import torch
+        from ultralytics.nn.tasks import DetectionModel
         
-        if file_size < 1024:
-            st.sidebar.error(f" Model file too small: {file_size} bytes")
-            return None
+        with torch.serialization.safe_globals([DetectionModel]):
+            model = YOLO(path)
         
-        st.sidebar.info("Loading YOLO model...")
-        model = YOLO(path)
-        st.sidebar.success(" YOLO model loaded successfully!")
-        logger.info("YOLO model loaded successfully from %s", path)
+        logger.info("YOLO model loaded successfully")
         return model
         
     except Exception as exc:
-        st.sidebar.error(f" Error loading model: {str(exc)}")
         logger.exception("Error loading YOLO model: %s", exc)
-        return None
+        try:
+            model = YOLO(path)
+            return model
+        except:
+            return None
 
 
 def validate_file(file: Any) -> Tuple[bool, str]:
-    """Check extension and basic size limit."""
+    """Check file extension and validity."""
     if file is None:
         return False, "No file provided"
     
@@ -224,7 +197,6 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
                     "No Tumor": 85.0
                 },
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "model_type": "YOLO Detection"
             },
             "image_metrics": {
                 "quality_score": 85.0,
@@ -259,8 +231,10 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
         
         class_display_name = class_name.capitalize()
         if class_display_name in confidence_scores:
-            current_score = confidence_scores[class_display_name]
-            confidence_scores[class_display_name] = max(current_score, float(confidence) * 100)
+            confidence_scores[class_display_name] = max(
+                confidence_scores[class_display_name], 
+                float(confidence) * 100
+            )
     
     if not boxes:
         confidence_scores["No Tumor"] = 85.0
@@ -285,7 +259,6 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
             "overall_confidence": float(overall_confidence),
             "confidence_scores": confidence_scores,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "model_type": "YOLO Detection"
         },
         "image_metrics": {
             "quality_score": float(quality_score),
@@ -361,9 +334,7 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     else:
         md.append("- No pathological regions detected in the analyzed image.")
     
-    md.extend([
-        "## Confidence Scores"
-    ])
+    md.extend(["## Confidence Scores"])
     
     for class_name, score in detection["confidence_scores"].items():
         if score > 0:
@@ -406,7 +377,6 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     md.extend([
         "## Technical Notes",
         "- Analysis performed using YOLOv8 object detection model",
-        "- Model provides both tumor localization and classification",
         "- Results should be interpreted by qualified healthcare professionals"
     ])
     
@@ -457,7 +427,7 @@ def main() -> None:
                 st.success("Patient information saved")
 
         st.markdown("---")
-        st.markdown('<div class="section-header">AI Model Status</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">System Status</div>', unsafe_allow_html=True)
         
         if "yolo_model" not in st.session_state:
             st.session_state["yolo_model"] = load_yolo_model()
@@ -465,33 +435,11 @@ def main() -> None:
         yolo_loaded = st.session_state["yolo_model"] is not None
         
         st.markdown(
-            f'<div style="display: flex; align-items: center; margin-bottom: 16px;">'
+            f'<div style="display: flex; align-items: center;">'
             f'<div class="status-indicator {"status-active" if yolo_loaded else "status-inactive"}"></div>'
-            f'<span>YOLO Detection Model: <strong>{"Operational" if yolo_loaded else "Not Available"}</strong></span>'
+            f'<span>AI Model: <strong>{"Ready" if yolo_loaded else "Not Available"}</strong></span>'
             f'</div>',
             unsafe_allow_html=True
-        )
-        
-        if not yolo_loaded:
-            st.markdown(
-                '<div class="info-box">Model not loaded. Check if "yolov8_model.pt" exists.</div>',
-                unsafe_allow_html=True
-            )
-            
-            if os.path.exists(YOLO_MODEL_PATH):
-                file_size = os.path.getsize(YOLO_MODEL_PATH)
-                st.info(f"Model file found: {file_size} bytes")
-            else:
-                st.error(f"Model file not found: {YOLO_MODEL_PATH}")
-
-        st.markdown("---")
-        st.markdown('<div class="section-header">Detection Settings</div>', unsafe_allow_html=True)
-        st.session_state["detection_confidence"] = st.slider(
-            "Detection Confidence Threshold", 
-            min_value=0.1, 
-            max_value=0.9, 
-            value=0.25,
-            help="Higher values require more confidence for detections"
         )
 
     tab1, tab2, tab3 = st.tabs(["Image Analysis", "Results Dashboard", "Clinical Report"])
@@ -518,18 +466,7 @@ def main() -> None:
                         st.session_state["uploaded_image"] = image
                     except Exception as ex:
                         st.error(f"Failed to read image: {ex}")
-                        logger.exception("Failed to read uploaded image")
                         st.session_state.pop("uploaded_image", None)
-            else:
-                st.markdown(
-                    '<div class="upload-area">'
-                    '<h3>Upload MRI Image</h3>'
-                    '<p>Drag and drop or click to browse</p>'
-                    '<p style="font-size: 0.8rem; color: var(--text-color);">'
-                    'Supported formats: JPG, JPEG, PNG</p>'
-                    '</div>',
-                    unsafe_allow_html=True
-                )
                 
         with col_right:
             st.markdown('<div class="section-header">AI Analysis</div>', unsafe_allow_html=True)
@@ -541,16 +478,13 @@ def main() -> None:
                         try:
                             yolo_model = st.session_state.get("yolo_model")
                             if yolo_model is None:
-                                st.warning("Model not available. Using fallback results.")
-                                yolo_results = fallback_yolo_results()
+                                st.error("AI model not available. Please check model file.")
                             else:
                                 yolo_results = run_yolo_detection(yolo_model, img)
-
-                            st.session_state["yolo_results"] = yolo_results
-                            st.success("Analysis complete")
+                                st.session_state["yolo_results"] = yolo_results
+                                st.success("Analysis complete")
                             
                         except Exception as e:
-                            logger.exception("Analysis failed: %s", e)
                             st.error(f"Analysis failed: {e}")
                 else:
                     st.markdown(
@@ -573,7 +507,7 @@ def main() -> None:
             c1, c2, c3 = st.columns(3)
             
             with c1:
-                badge_class = f"risk-{detection['risk_level'].lower().replace(' ', '-')}"
+                badge_class = f"risk-{detection['risk_level'].lower()}"
                 st.markdown(
                     f'<div class="metric-card">'
                     f'<h4>Detection</h4><h3>{detection["class"]}</h3>'
@@ -619,7 +553,6 @@ def main() -> None:
                         st.write(f"Location: ({box['x1']}, {box['y1']}) to ({box['x2']}, {box['y2']})")
                         st.write(f"Size: {box['x2'] - box['x1']} × {box['y2'] - box['y1']} px")
                         st.write(f"Type: {box['type']}")
-                        st.write(f"Confidence: {box['confidence']:.1%}")
             else:
                 st.markdown(
                     '<div class="info-box">No pathological regions detected.</div>',
@@ -676,15 +609,6 @@ def main() -> None:
                     mime="text/plain", 
                     use_container_width=True
                 )
-            
-            st.markdown('<div class="section-header">Clinical Notes</div>', unsafe_allow_html=True)
-            st.text_area(
-                "Add clinical notes (local only)", 
-                value="", 
-                height=120, 
-                placeholder="Enter additional clinical observations or notes here...", 
-                label_visibility="collapsed"
-            )
         else:
             st.markdown(
                 '<div class="empty-state">'
@@ -700,26 +624,6 @@ def main() -> None:
         "NeuroScan AI | Detection System | For clinical use only</div>",
         unsafe_allow_html=True
     )
-
-
-def fallback_yolo_results() -> Dict[str, Any]:
-    """Return deterministic fallback results for model."""
-    return {
-        "detection": {
-            "boxes": [],
-            "class": "No Tumor",
-            "risk_level": "None",
-            "overall_confidence": 85.0,
-            "confidence_scores": {"Glioma": 0.0, "Meningioma": 0.0, "Pituitary": 0.0, "No Tumor": 85.0},
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "model_type": "YOLO Detection"
-        },
-        "image_metrics": {
-            "quality_score": 85.0,
-            "contrast_level": 75.0,
-            "noise_level": 8.0
-        }
-    }
 
 
 if __name__ == "__main__":
