@@ -1,6 +1,7 @@
 """
 NeuroScan AI - Brain Tumor Detection with YOLO
 Streamlined version for end users
+NO OPENCV VERSION - Uses only PIL/Pillow
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -10,14 +11,12 @@ from datetime import datetime
 import os
 
 import numpy as np
-from PIL import Image
-import cv2
+from PIL import Image, ImageDraw, ImageFont
 import streamlit as st
 from ultralytics import YOLO
 
 # ---------- Configuration ----------
 YOLO_MODEL_PATH = "yolov8_model.pt"
-YOLO_MODEL_URL = "YOUR_DIRECT_DOWNLOAD_URL_HERE"  # If using external hosting
 ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png")
 
 # ---------- Logging ----------
@@ -142,31 +141,17 @@ st.markdown("""
 def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
     """Load YOLOv8 model safely and cache it."""
     try:
-        # Download model if not exists (for external hosting)
-        if not os.path.exists(path) and YOLO_MODEL_URL:
-            st.info("Downloading model... This may take a minute.")
-            import urllib.request
-            urllib.request.urlretrieve(YOLO_MODEL_URL, path)
-        
         if not os.path.exists(path):
+            st.error(f"Model file not found at {path}")
             return None
         
-        import torch
-        from ultralytics.nn.tasks import DetectionModel
-        
-        with torch.serialization.safe_globals([DetectionModel]):
-            model = YOLO(path)
-        
+        model = YOLO(path)
         logger.info("YOLO model loaded successfully")
         return model
         
     except Exception as exc:
         logger.exception("Error loading YOLO model: %s", exc)
-        try:
-            model = YOLO(path)
-            return model
-        except:
-            return None
+        return None
 
 
 def validate_file(file: Any) -> Tuple[bool, str]:
@@ -275,16 +260,27 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
     }
 
 
-def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Image.Image:
-    """Return annotated PIL.Image with detection results."""
-    arr = np.array(image.convert("RGB"))
-    img = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+def draw_yolo_annotations_pil(image: Image.Image, detection: Dict[str, Any]) -> Image.Image:
+    """Return annotated PIL.Image with detection results using PIL only."""
+    # Create a copy of the image to draw on
+    img_copy = image.copy()
+    draw = ImageDraw.Draw(img_copy)
+    
+    # Try to load a font, fall back to default if not available
+    try:
+        # Try to use a default system font
+        font = ImageFont.truetype("arial.ttf", 16)
+    except:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        except:
+            font = ImageFont.load_default()
     
     colors = {
-        "Glioma": (0, 0, 255),
-        "Meningioma": (0, 165, 255),
-        "Pituitary": (255, 255, 0),
-        "default": (0, 255, 0)
+        "Glioma": (255, 0, 0),       # Red
+        "Meningioma": (255, 165, 0), # Orange
+        "Pituitary": (255, 255, 0),  # Yellow
+        "default": (0, 255, 0)       # Green
     }
     
     for box in detection.get("boxes", []):
@@ -293,22 +289,45 @@ def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Imag
         confidence = box["confidence"]
         color = colors.get(tumor_type, colors["default"])
         
-        label = f"{tumor_type} {confidence:.1%}"
-        (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        # Draw rectangle
+        draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
         
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
-        cv2.rectangle(img, (x1, y1 - h_text - 10), (x1 + w_text + 6, y1), color, -1)
-        cv2.putText(img, label, (x1 + 3, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        # Draw label
+        label = f"{tumor_type} {confidence:.1%}"
+        
+        # Get text size using textbbox
+        try:
+            text_bbox = draw.textbbox((0, 0), label, font=font)
+        except:
+            # Fallback for older PIL versions
+            text_bbox = draw.textsize(label, font=font)
+            text_bbox = (0, 0, text_bbox[0], text_bbox[1])
+        
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        
+        # Draw label background
+        draw.rectangle([x1, y1 - text_height - 10, x1 + text_width + 10, y1], fill=color)
+        
+        # Draw label text
+        draw.text((x1 + 5, y1 - text_height - 5), label, fill=(255, 255, 255), font=font)
     
     detected_class = detection.get("class", "Unknown")
     overall_confidence = detection.get("overall_confidence", 0)
     detection_text = f"Detection: {detected_class} ({overall_confidence:.1f}%)"
     
-    cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 1)
+    # Get detection text size
+    try:
+        text_bbox = draw.textbbox((0, 0), detection_text, font=font)
+    except:
+        text_bbox = draw.textsize(detection_text, font=font)
+        text_bbox = (0, 0, text_bbox[0], text_bbox[1])
     
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(img_rgb)
+    # Draw text with outline effect (shadow)
+    draw.text((22, 32), detection_text, fill=(0, 0, 0), font=font)  # Shadow
+    draw.text((20, 30), detection_text, fill=(255, 255, 255), font=font)  # Main text
+    
+    return img_copy
 
 
 def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> str:
@@ -540,7 +559,7 @@ def main() -> None:
                 )
 
             st.markdown('<div class="section-header">Visual Analysis</div>', unsafe_allow_html=True)
-            annotated = draw_yolo_annotations(st.session_state["uploaded_image"], detection)
+            annotated = draw_yolo_annotations_pil(st.session_state["uploaded_image"], detection)
             st.image(annotated, caption="Analysis Results")
 
             buf = io.BytesIO()
