@@ -1,41 +1,24 @@
 """
 NeuroScan AI - Brain Tumor Detection with YOLO
-Streamlit Cloud Compatible Version
+Streamlined version for end users
 """
 
-import sys
-import os
-
-# ---------- FIX FOR STREAMLIT CLOUD ----------
-# Set environment variable to avoid OpenCV GUI issues
-os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
-os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
-
-# Import everything AFTER setting env vars
 from typing import Any, Dict, List, Optional, Tuple
 import io
 import logging
 from datetime import datetime
+import os
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
+import cv2
 import streamlit as st
 
-# Try to import OpenCV and handle gracefully
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError as e:
-    st.error(f"OpenCV import failed: {e}")
-    CV2_AVAILABLE = False
-    cv2 = None
-
-# Try to import YOLO
+# Conditional import for YOLO
 try:
     from ultralytics import YOLO
     YOLO_AVAILABLE = True
-except ImportError as e:
-    st.error(f"YOLO import failed: {e}")
+except ImportError:
     YOLO_AVAILABLE = False
     YOLO = None
 
@@ -61,7 +44,6 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* Keep all your existing CSS styles here */
         .main-header {
             font-size: 2.2rem;
             background: linear-gradient(135deg, #0066CC, #009688);
@@ -137,6 +119,14 @@ st.markdown("""
             margin: 12px 0;
             border-radius: 0 8px 8px 0;
         }
+        .warning-box {
+            background-color: #FFF3CD;
+            border-left: 4px solid #FFA726;
+            padding: 12px 16px;
+            margin: 12px 0;
+            border-radius: 0 8px 8px 0;
+            color: #856404;
+        }
         .status-indicator {
             display: inline-block;
             width: 10px;
@@ -163,20 +153,28 @@ st.markdown("""
 
 
 @st.cache_resource
-def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[YOLO]:
+def load_yolo_model(path: str = YOLO_MODEL_PATH) -> Optional[Any]:
     """Load YOLOv8 model safely and cache it."""
+    if not YOLO_AVAILABLE:
+        logger.error("Ultralytics not available")
+        return None
+        
     try:
-        if not YOLO_AVAILABLE:
-            st.error("YOLO is not available. Please check installation.")
-            return None
-        
         if not os.path.exists(path):
-            st.error(f"Model file not found at {path}")
+            logger.error(f"Model file not found: {path}")
             return None
         
-        model = YOLO(path)
-        logger.info("YOLO model loaded successfully")
-        return model
+        # Try safe loading first
+        try:
+            import torch
+            model = YOLO(path)
+            logger.info("YOLO model loaded successfully")
+            return model
+        except Exception as e:
+            logger.warning(f"Safe loading failed, trying standard loading: {e}")
+            model = YOLO(path)
+            logger.info("YOLO model loaded with standard method")
+            return model
         
     except Exception as exc:
         logger.exception("Error loading YOLO model: %s", exc)
@@ -195,35 +193,11 @@ def validate_file(file: Any) -> Tuple[bool, str]:
     return True, "OK"
 
 
-def run_yolo_detection(model: YOLO, image: Image.Image) -> Dict[str, Any]:
+def run_yolo_detection(model: Any, image: Image.Image) -> Dict[str, Any]:
     """Run object detection using YOLOv8 model."""
-    try:
-        img_array = np.array(image.convert('RGB'))
-        results = model(img_array, conf=0.25)
-        return interpret_yolo_predictions(results, image.size)
-    except Exception as e:
-        st.error(f"Detection failed: {e}")
-        # Return empty results if detection fails
-        return {
-            "detection": {
-                "boxes": [],
-                "class": "No Tumor",
-                "risk_level": "None",
-                "overall_confidence": 85.0,
-                "confidence_scores": {
-                    "Glioma": 0.0, 
-                    "Meningioma": 0.0, 
-                    "Pituitary": 0.0, 
-                    "No Tumor": 85.0
-                },
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            },
-            "image_metrics": {
-                "quality_score": 85.0,
-                "contrast_level": 75.0,
-                "noise_level": 8.0
-            }
-        }
+    img_array = np.array(image.convert('RGB'))
+    results = model(img_array, conf=0.25)
+    return interpret_yolo_predictions(results, image.size)
 
 
 def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Dict[str, Any]:
@@ -313,23 +287,16 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
     }
 
 
-def draw_yolo_annotations_pil(image: Image.Image, detection: Dict[str, Any]) -> Image.Image:
-    """Return annotated PIL.Image with detection results using PIL only."""
-    # Create a copy of the image to draw on
-    img_copy = image.copy()
-    draw = ImageDraw.Draw(img_copy)
-    
-    # Try to load a font
-    try:
-        font = ImageFont.truetype("arial.ttf", 16)
-    except:
-        font = ImageFont.load_default()
+def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Image.Image:
+    """Return annotated PIL.Image with detection results."""
+    arr = np.array(image.convert("RGB"))
+    img = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
     
     colors = {
-        "Glioma": (255, 0, 0),       # Red
-        "Meningioma": (255, 165, 0), # Orange
-        "Pituitary": (255, 255, 0),  # Yellow
-        "default": (0, 255, 0)       # Green
+        "Glioma": (0, 0, 255),
+        "Meningioma": (0, 165, 255),
+        "Pituitary": (255, 255, 0),
+        "default": (0, 255, 0)
     }
     
     for box in detection.get("boxes", []):
@@ -338,35 +305,22 @@ def draw_yolo_annotations_pil(image: Image.Image, detection: Dict[str, Any]) -> 
         confidence = box["confidence"]
         color = colors.get(tumor_type, colors["default"])
         
-        # Draw rectangle
-        draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
-        
-        # Draw label
         label = f"{tumor_type} {confidence:.1%}"
+        (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
         
-        # Get text size
-        try:
-            text_bbox = draw.textbbox((0, 0), label, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
-        except:
-            text_width = len(label) * 8
-            text_height = 20
-        
-        # Draw label background
-        draw.rectangle([x1, y1 - text_height - 10, x1 + text_width + 10, y1], fill=color)
-        
-        # Draw label text
-        draw.text((x1 + 5, y1 - text_height - 5), label, fill=(255, 255, 255), font=font)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
+        cv2.rectangle(img, (x1, y1 - h_text - 10), (x1 + w_text + 6, y1), color, -1)
+        cv2.putText(img, label, (x1 + 3, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     
     detected_class = detection.get("class", "Unknown")
     overall_confidence = detection.get("overall_confidence", 0)
     detection_text = f"Detection: {detected_class} ({overall_confidence:.1f}%)"
     
-    # Draw text
-    draw.text((20, 30), detection_text, fill=(255, 255, 255), font=font)
+    cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 1)
     
-    return img_copy
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(img_rgb)
 
 
 def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> str:
@@ -467,18 +421,22 @@ def render_confidence_bars(confidence_scores: Dict[str, float]) -> None:
 
 
 def main() -> None:
-    # Show warnings at the top if dependencies missing
-    if not CV2_AVAILABLE:
-        st.warning("⚠️ OpenCV is not available. Some features may be limited.")
-    if not YOLO_AVAILABLE:
-        st.error("❌ YOLO is not available. AI features will not work.")
-    
     st.markdown('<div class="main-header">NeuroScan AI</div>', unsafe_allow_html=True)
     st.markdown(
         "<p style='text-align:center;color:var(--text-color);margin-bottom:18px;'>"
         "Brain Tumor Detection with AI Model</p>",
         unsafe_allow_html=True
     )
+
+    # Check for model file
+    model_exists = os.path.exists(YOLO_MODEL_PATH)
+    
+    if not model_exists:
+        st.error(
+            f"⚠️ **Model file '{YOLO_MODEL_PATH}' not found!**\n\n"
+            "Please add your trained YOLOv8 model file to the project directory. "
+            "See README.md for instructions."
+        )
 
     with st.sidebar:
         st.markdown('<div class="section-header">Patient Information</div>', unsafe_allow_html=True)
@@ -512,6 +470,14 @@ def main() -> None:
             f'</div>',
             unsafe_allow_html=True
         )
+        
+        if not YOLO_AVAILABLE:
+            st.markdown(
+                '<div class="warning-box">'
+                '⚠️ Ultralytics package not installed properly'
+                '</div>',
+                unsafe_allow_html=True
+            )
 
     tab1, tab2, tab3 = st.tabs(["Image Analysis", "Results Dashboard", "Clinical Report"])
 
@@ -549,7 +515,7 @@ def main() -> None:
                         try:
                             yolo_model = st.session_state.get("yolo_model")
                             if yolo_model is None:
-                                st.error("AI model not available. Please check model file.")
+                                st.error("AI model not available. Please check model file and dependencies.")
                             else:
                                 yolo_results = run_yolo_detection(yolo_model, img)
                                 st.session_state["yolo_results"] = yolo_results
@@ -557,6 +523,7 @@ def main() -> None:
                             
                         except Exception as e:
                             st.error(f"Analysis failed: {e}")
+                            logger.exception("Analysis error")
                 else:
                     st.markdown(
                         '<div class="info-box">Ready to analyze. Press "Start Analysis".</div>',
@@ -604,7 +571,7 @@ def main() -> None:
                 )
 
             st.markdown('<div class="section-header">Visual Analysis</div>', unsafe_allow_html=True)
-            annotated = draw_yolo_annotations_pil(st.session_state["uploaded_image"], detection)
+            annotated = draw_yolo_annotations(st.session_state["uploaded_image"], detection)
             st.image(annotated, caption="Analysis Results")
 
             buf = io.BytesIO()
