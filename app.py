@@ -225,17 +225,33 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
         }
     
     boxes = []
-    risk_levels = {"glioma": "High", "meningioma": "Medium", "pituitary": "Low"}
-    confidence_scores = {"Glioma": 0.0, "Meningioma": 0.0, "Pituitary": 0.0, "No Tumor": 0.0}
-    class_names = {0: "glioma", 1: "meningioma", 2: "pituitary", 3: "no-tumor"}
+    # Match the class order from training: ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
+    class_names = {0: "Glioma", 1: "Meningioma", 2: "No Tumor", 3: "Pituitary"}
+    
+    # Initialize confidence scores for all classes
+    confidence_scores = {class_name: 0.0 for class_name in class_names.values()}
+    
+    # Risk levels mapping
+    risk_levels = {
+        "Glioma": "High",
+        "Meningioma": "Medium", 
+        "Pituitary": "Low",
+        "No Tumor": "None"
+    }
+    
+    # Process all detections
+    detected_classes = set()
     
     for box in results[0].boxes:
         x1, y1, x2, y2 = box.xyxy[0].tolist()
         confidence = box.conf[0].item()
         class_id = int(box.cls[0].item())
-        class_name = class_names.get(class_id, "unknown")
         
-        if class_name == "no-tumor":
+        # Get class name with correct mapping
+        class_name = class_names.get(class_id, "Unknown")
+        
+        # Skip if this is "No Tumor" detection (we'll handle it specially)
+        if class_name == "No Tumor":
             continue
             
         boxes.append({
@@ -244,30 +260,32 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
             "x2": int(x2),
             "y2": int(y2),
             "confidence": float(confidence),
-            "type": class_name.capitalize(),
-            "class_name": class_name
+            "type": class_name,
+            "class_name": class_name.lower()
         })
         
-        class_display_name = class_name.capitalize()
-        if class_display_name in confidence_scores:
-            confidence_scores[class_display_name] = max(
-                confidence_scores[class_display_name], 
-                float(confidence) * 100
-            )
+        # Update confidence score for this class
+        confidence_scores[class_name] = max(
+            confidence_scores[class_name], 
+            float(confidence) * 100
+        )
+        detected_classes.add(class_name)
     
-    if not boxes:
-        confidence_scores["No Tumor"] = 85.0
-    
+    # Determine primary detection
     if boxes:
+        # Sort by confidence and take the highest
         primary_detection = max(boxes, key=lambda x: x["confidence"])
         detected_class = primary_detection["type"]
-        risk_level = risk_levels.get(primary_detection["class_name"], "Medium")
+        risk_level = risk_levels.get(detected_class, "Medium")
         overall_confidence = primary_detection["confidence"] * 100
     else:
+        # No tumor detected
         detected_class = "No Tumor"
         risk_level = "None"
-        overall_confidence = confidence_scores["No Tumor"]
+        overall_confidence = 85.0  # Default confidence for no tumor
+        confidence_scores["No Tumor"] = overall_confidence
     
+    # Calculate image quality metrics
     quality_score = np.clip(overall_confidence * 0.8 + 20.0, 0.0, 100.0)
     
     return {
@@ -286,17 +304,17 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
         }
     }
 
-
 def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Image.Image:
     """Return annotated PIL.Image with detection results."""
     arr = np.array(image.convert("RGB"))
     img = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
     
     colors = {
-        "Glioma": (0, 0, 255),
-        "Meningioma": (0, 165, 255),
-        "Pituitary": (255, 255, 0),
-        "default": (0, 255, 0)
+        "Glioma": (0, 0, 255),        # Red
+        "Meningioma": (0, 165, 255),  # Orange
+        "Pituitary": (255, 255, 0),   # Cyan
+        "No Tumor": (0, 255, 0),      # Green
+        "default": (0, 255, 0)        # Green
     }
     
     for box in detection.get("boxes", []):
@@ -314,7 +332,10 @@ def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Imag
     
     detected_class = detection.get("class", "Unknown")
     overall_confidence = detection.get("overall_confidence", 0)
-    detection_text = f"Detection: {detected_class} ({overall_confidence:.1f}%)"
+    risk_level = detection.get("risk_level", "")
+    
+    # Add detection text at top
+    detection_text = f"{detected_class} ({overall_confidence:.1f}%) - {risk_level} Risk"
     
     cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.putText(img, detection_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 1)
@@ -666,3 +687,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
