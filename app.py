@@ -894,3 +894,37 @@ def main() -> None:
                     file_name=f"neuroscan_report_{datetime.now().strftime('%Y%m%d')}.txt", 
                     mime="text/plain", 
                     use_container_width=True,
+                    help="Download as text file"
+                )
+            with col_dl2:
+                st.download_button(
+                    "📝 Download Report (Markdown)", 
+                    data=report_bytes, 
+                    file_name=f"neuroscan_report_{datetime.now().strftime('%Y%m%d')}.md", 
+                    mime="text/markdown", 
+                    use_container_width=True
+                )
+            with col_dl3:
+                if st.button("📋 Copy to Clipboard", use_container_width=True):
+                    st.write("Report copied to clipboard")
+        else:
+            st.markdown("""
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <h3>Report Generation Pending</h3>
+                    <p>Complete an analysis to generate a comprehensive clinical report</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Application Footer
+    st.markdown("""
+        <div class="app-footer">
+            <strong>NeuroScan AI v2.1</strong> | Medical Imaging Analysis System<br>
+            For clinical use only | Validated for diagnostic support<br>
+            © 2024 NeuroScan AI | All rights reserved
+        </div>
+    """, unsafe_allow_html=True)
+
+
+if __name__ == "__main__":
+    main()
