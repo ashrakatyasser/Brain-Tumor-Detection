@@ -1,4 +1,3 @@
-
 """
 NeuroScan AI - Brain Tumor Detection with YOLO
 Streamlined version for end users
@@ -217,11 +216,6 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
                     "No Tumor": 85.0
                 },
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            },
-            "image_metrics": {
-                "quality_score": 85.0,
-                "contrast_level": 75.0,
-                "noise_level": 8.0
             }
         }
     
@@ -286,9 +280,6 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
         overall_confidence = 85.0  # Default confidence for no tumor
         confidence_scores["No Tumor"] = overall_confidence
     
-    # Calculate image quality metrics
-    quality_score = np.clip(overall_confidence * 0.8 + 20.0, 0.0, 100.0)
-    
     return {
         "detection": {
             "boxes": boxes,
@@ -297,11 +288,6 @@ def interpret_yolo_predictions(results: List, image_size: Tuple[int, int]) -> Di
             "overall_confidence": float(overall_confidence),
             "confidence_scores": confidence_scores,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        },
-        "image_metrics": {
-            "quality_score": float(quality_score),
-            "contrast_level": float(min(100.0, 70.0 + overall_confidence * 0.15)),
-            "noise_level": float(max(0.0, 15.0 - overall_confidence * 0.1))
         }
     }
 
@@ -348,7 +334,6 @@ def draw_yolo_annotations(image: Image.Image, detection: Dict[str, Any]) -> Imag
 def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> str:
     """Create comprehensive report using YOLO model results."""
     detection = analysis["detection"]
-    metrics = analysis["image_metrics"]
     patient_id = patient_info.get("id", "N/A")
     physician = patient_info.get("physician", "Not Specified")
     
@@ -382,10 +367,6 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
             md.append(f"- {class_name}: {score:.1f}%")
     
     md.extend([
-        "## Image Quality Assessment",
-        f"- **Quality Score:** {metrics['quality_score']:.1f}/100",
-        f"- **Contrast Level:** {metrics['contrast_level']:.1f}/100",
-        f"- **Noise Level:** {metrics['noise_level']:.1f}/100",
         "## Clinical Recommendations"
     ])
     
@@ -414,12 +395,6 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
             "- No immediate intervention required",
             "- Clinical correlation as needed"
         ])
-    
-    md.extend([
-        "## Technical Notes",
-        "- Analysis performed using YOLOv8 object detection model",
-        "- Results should be interpreted by qualified healthcare professionals"
-    ])
     
     return "\n\n".join(md)
 
@@ -621,16 +596,6 @@ def main() -> None:
 
             st.markdown('<div class="section-header">Confidence Breakdown</div>', unsafe_allow_html=True)
             render_confidence_bars(detection["confidence_scores"])
-
-            st.markdown('<div class="section-header">Image Quality Assessment</div>', unsafe_allow_html=True)
-            metrics = results["image_metrics"]
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Quality Score", f"{metrics['quality_score']:.1f}/100")
-            with col2:
-                st.metric("Contrast Level", f"{metrics['contrast_level']:.1f}/100")
-            with col3:
-                st.metric("Noise Level", f"{metrics['noise_level']:.1f}/100")
 
         else:
             st.markdown(
