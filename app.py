@@ -25,13 +25,11 @@ except ImportError:
 # Conditional import for PDF
 try:
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
-    from reportlab.pdfgen import canvas
     from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    import tempfile
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
@@ -185,6 +183,13 @@ st.markdown("""
         .physician-name {
             color: #2c3e50;
             margin: 5px 0;
+        }
+        .pdf-feature-box {
+            background-color: #e8f4fd;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: 12px 0;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -439,10 +444,10 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     return "\n\n".join(md)
 
 
-def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any], annotated_image: Image.Image) -> bytes:
+def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> bytes:
     """Generate a PDF report with analysis results."""
     if not PDF_AVAILABLE:
-        raise ImportError("ReportLab library not available. Please install with: pip install reportlab")
+        raise ImportError("ReportLab library not available")
     
     detection = analysis["detection"]
     
@@ -771,13 +776,12 @@ def main() -> None:
             )
         
         # PDF status
-        if not PDF_AVAILABLE:
-            st.markdown(
-                '<div class="warning-box">'
-                '⚠️ PDF generation requires: pip install reportlab'
-                '</div>',
-                unsafe_allow_html=True
-            )
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            pdf_status_class = "status-active" if PDF_AVAILABLE else "status-inactive"
+            st.markdown(f'<div class="status-indicator {pdf_status_class}"></div>', unsafe_allow_html=True)
+        with col2:
+            st.write(f"**PDF Reports:** {'✅ Available' if PDF_AVAILABLE else '⚠️ Text Only'}")
 
     tab1, tab2, tab3 = st.tabs(["Image Analysis", "Results Dashboard", "Clinical Report"])
 
@@ -919,43 +923,59 @@ def main() -> None:
             st.markdown(report_md, unsafe_allow_html=False)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Single PDF download button
+            # Generate PDF report directly
             if PDF_AVAILABLE:
-                if st.button("📄 Download PDF Report", type="primary", use_container_width=True):
-                    with st.spinner("Generating PDF report..."):
-                        try:
-                            # Get annotated image
-                            annotated = draw_yolo_annotations(
-                                st.session_state["uploaded_image"], 
-                                st.session_state["yolo_results"]["detection"]
-                            )
-                            
-                            # Generate PDF
-                            pdf_bytes = generate_pdf_report(
-                                st.session_state["yolo_results"],
-                                patient_info,
-                                annotated
-                            )
-                            
-                            # Generate filename
-                            patient_id = patient_info.get("id", "unknown")
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
-                            
-                            # Download button
-                            st.download_button(
-                                label="⬇️ Download PDF Report",
-                                data=pdf_bytes,
-                                file_name=filename,
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                            
-                        except Exception as e:
-                            st.error(f"Failed to generate PDF: {e}")
-                            logger.exception("PDF generation error")
+                try:
+                    # Generate PDF
+                    pdf_bytes = generate_pdf_report(
+                        st.session_state["yolo_results"],
+                        patient_info
+                    )
+                    
+                    # Generate filename
+                    patient_id = patient_info.get("id", "unknown")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
+                    
+                    # Single download button
+                    st.download_button(
+                        label="📄 Download PDF Report",
+                        data=pdf_bytes,
+                        file_name=filename,
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Failed to generate PDF: {e}")
+                    logger.exception("PDF generation error")
             else:
-                st.warning("PDF generation requires ReportLab library. Install with: `pip install reportlab`")
+                # If PDF not available, provide text download
+                report_text = generate_text_report(st.session_state["yolo_results"], patient_info)
+                patient_id = patient_info.get("id", "unknown")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"neuroscan_report_{patient_id}_{timestamp}.txt"
+                
+                st.download_button(
+                    label="📄 Download Text Report",
+                    data=report_text.encode('utf-8'),
+                    file_name=filename,
+                    mime="text/plain",
+                    type="primary",
+                    use_container_width=True
+                )
+                
+                st.markdown(
+                    '''
+                    <div class="pdf-feature-box">
+                    <strong>💡 Enhanced PDF Reports:</strong><br>
+                    For professional PDF reports with tables and formatting, 
+                    install the required library by running: <code>pip install reportlab</code>
+                    </div>
+                    ''',
+                    unsafe_allow_html=True
+                )
                 
         else:
             st.markdown(
