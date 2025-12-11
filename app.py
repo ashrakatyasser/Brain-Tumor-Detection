@@ -906,4 +906,73 @@ def main() -> None:
                 '<h3>No Analysis Available</h3>'
                 '<p>Upload an MRI image and run analysis to view results.</p>'
                 '</div>',
-                unsafe
+                unsafe_allow_html=True
+            )
+
+    with tab3:
+        st.markdown('<div class="section-header">Clinical Report</div>', unsafe_allow_html=True)
+        if st.session_state.get("yolo_results"):
+            patient_info = st.session_state.get("patient_info", {})
+            report_md = generate_text_report(st.session_state["yolo_results"], patient_info)
+            
+            st.markdown('<div class="medical-card">', unsafe_allow_html=True)
+            st.markdown(report_md, unsafe_allow_html=False)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Single PDF download button
+            if PDF_AVAILABLE:
+                if st.button("📄 Download PDF Report", type="primary", use_container_width=True):
+                    with st.spinner("Generating PDF report..."):
+                        try:
+                            # Get annotated image
+                            annotated = draw_yolo_annotations(
+                                st.session_state["uploaded_image"], 
+                                st.session_state["yolo_results"]["detection"]
+                            )
+                            
+                            # Generate PDF
+                            pdf_bytes = generate_pdf_report(
+                                st.session_state["yolo_results"],
+                                patient_info,
+                                annotated
+                            )
+                            
+                            # Generate filename
+                            patient_id = patient_info.get("id", "unknown")
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
+                            
+                            # Download button
+                            st.download_button(
+                                label="⬇️ Download PDF Report",
+                                data=pdf_bytes,
+                                file_name=filename,
+                                mime="application/pdf",
+                                use_container_width=True
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"Failed to generate PDF: {e}")
+                            logger.exception("PDF generation error")
+            else:
+                st.warning("PDF generation requires ReportLab library. Install with: `pip install reportlab`")
+                
+        else:
+            st.markdown(
+                '<div class="empty-state">'
+                '<h3>No Report Available</h3>'
+                '<p>Complete an analysis to generate a clinical report.</p>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center;color:var(--text-color);padding:10px;font-size:0.9rem;'>"
+        "NeuroScan AI | Detection System | For clinical use only</div>",
+        unsafe_allow_html=True
+    )
+
+
+if __name__ == "__main__":
+    main()
