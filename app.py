@@ -8,6 +8,7 @@ import io
 import logging
 from datetime import datetime
 import os
+import tempfile
 
 import numpy as np
 from PIL import Image
@@ -25,7 +26,7 @@ except ImportError:
 # Conditional import for PDF
 try:
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as ReportLabImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
     from reportlab.lib.units import inch
@@ -444,8 +445,8 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     return "\n\n".join(md)
 
 
-def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> bytes:
-    """Generate a PDF report with analysis results."""
+def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any], annotated_image: Image.Image) -> bytes:
+    """Generate a PDF report with analysis results including annotated image."""
     if not PDF_AVAILABLE:
         raise ImportError("ReportLab library not available")
     
@@ -554,6 +555,32 @@ def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) 
     ]))
     
     story.append(summary_table)
+    story.append(Spacer(1, 20))
+    
+    # Annotated Image Section
+    story.append(Paragraph("Visual Analysis", heading_style))
+    
+    # Save annotated image to temporary file for PDF inclusion
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        annotated_image.save(tmp, format='PNG')
+        tmp_path = tmp.name
+    
+    try:
+        # Add image to PDF
+        img = ReportLabImage(tmp_path, width=6*inch, height=4.5*inch)
+        story.append(img)
+        story.append(Spacer(1, 10))
+        story.append(Paragraph(f"<i>Figure: MRI analysis showing {detection['class']} detection with {detection['overall_confidence']:.1f}% confidence</i>", normal_style))
+    except Exception as e:
+        logger.warning(f"Could not add image to PDF: {e}")
+        story.append(Paragraph("Annotated image unavailable in this report format.", normal_style))
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+    
     story.append(Spacer(1, 20))
     
     # Imaging Findings
@@ -923,54 +950,68 @@ def main() -> None:
             st.markdown(report_md, unsafe_allow_html=False)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Generate PDF report directly
+            # Single PDF download button - Generate PDF only when clicked
             if PDF_AVAILABLE:
-                try:
-                    # Generate PDF
-                    pdf_bytes = generate_pdf_report(
-                        st.session_state["yolo_results"],
-                        patient_info
-                    )
-                    
-                    # Generate filename
+                # Create a button that generates and downloads PDF
+                if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+                    with st.spinner("Generating PDF report..."):
+                        try:
+                            # Get annotated image
+                            annotated = draw_yolo_annotations(
+                                st.session_state["uploaded_image"], 
+                                st.session_state["yolo_results"]["detection"]
+                            )
+                            
+                            # Generate PDF
+                            pdf_bytes = generate_pdf_report(
+                                st.session_state["yolo_results"],
+                                patient_info,
+                                annotated
+                            )
+                            
+                            # Generate filename
+                            patient_id = patient_info.get("id", "unknown")
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
+                            
+                            # Provide download link
+                            st.download_button(
+                                label="⬇️ Download PDF Report",
+                                data=pdf_bytes,
+                                file_name=filename,
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"Failed to generate PDF: {e}")
+                            logger.exception("PDF generation error")
+                else:
+                    # Show info when button is not pressed
+                    st.info("Click 'Generate PDF Report' to create a professional PDF report with the annotated image.")
+            else:
+                # If PDF not available, provide text download
+                if st.button("📄 Generate Text Report", type="primary", use_container_width=True):
+                    report_text = generate_text_report(st.session_state["yolo_results"], patient_info)
                     patient_id = patient_info.get("id", "unknown")
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
+                    filename = f"neuroscan_report_{patient_id}_{timestamp}.txt"
                     
-                    # Single download button
                     st.download_button(
-                        label="📄 Download PDF Report",
-                        data=pdf_bytes,
+                        label="⬇️ Download Text Report",
+                        data=report_text.encode('utf-8'),
                         file_name=filename,
-                        mime="application/pdf",
+                        mime="text/plain",
                         type="primary",
                         use_container_width=True
                     )
-                    
-                except Exception as e:
-                    st.error(f"Failed to generate PDF: {e}")
-                    logger.exception("PDF generation error")
-            else:
-                # If PDF not available, provide text download
-                report_text = generate_text_report(st.session_state["yolo_results"], patient_info)
-                patient_id = patient_info.get("id", "unknown")
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"neuroscan_report_{patient_id}_{timestamp}.txt"
-                
-                st.download_button(
-                    label="📄 Download Text Report",
-                    data=report_text.encode('utf-8'),
-                    file_name=filename,
-                    mime="text/plain",
-                    type="primary",
-                    use_container_width=True
-                )
                 
                 st.markdown(
                     '''
                     <div class="pdf-feature-box">
                     <strong>💡 Enhanced PDF Reports:</strong><br>
-                    For professional PDF reports with tables and formatting, 
+                    For professional PDF reports with tables and annotated images, 
                     install the required library by running: <code>pip install reportlab</code>
                     </div>
                     ''',
