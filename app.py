@@ -22,18 +22,6 @@ except ImportError:
     YOLO_AVAILABLE = False
     YOLO = None
 
-# Conditional import for PDF
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    from reportlab.lib.units import inch
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-
 # ---------- Configuration ----------
 YOLO_MODEL_PATH = "yolov8_model.pt"
 ALLOWED_EXTENSIONS = ("jpg", "jpeg", "png")
@@ -183,13 +171,6 @@ st.markdown("""
         .physician-name {
             color: #2c3e50;
             margin: 5px 0;
-        }
-        .pdf-feature-box {
-            background-color: #e8f4fd;
-            border: 1px solid #b3d9ff;
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin: 12px 0;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -444,237 +425,6 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     return "\n\n".join(md)
 
 
-def generate_pdf_report(analysis: Dict[str, Any], patient_info: Dict[str, Any]) -> bytes:
-    """Generate a PDF report with analysis results."""
-    if not PDF_AVAILABLE:
-        raise ImportError("ReportLab library not available")
-    
-    detection = analysis["detection"]
-    
-    # Create a buffer for PDF
-    buffer = io.BytesIO()
-    
-    # Create document
-    doc = SimpleDocTemplate(buffer, pagesize=letter,
-                            rightMargin=72, leftMargin=72,
-                            topMargin=72, bottomMargin=72)
-    
-    # Get styles
-    styles = getSampleStyleSheet()
-    
-    # Custom styles
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        spaceAfter=30,
-        alignment=TA_CENTER,
-        textColor=colors.HexColor('#0066CC')
-    )
-    
-    heading_style = ParagraphStyle(
-        'CustomHeading',
-        parent=styles['Heading2'],
-        fontSize=16,
-        spaceBefore=20,
-        spaceAfter=10,
-        textColor=colors.HexColor('#009688')
-    )
-    
-    normal_style = ParagraphStyle(
-        'CustomNormal',
-        parent=styles['Normal'],
-        fontSize=11,
-        spaceAfter=8
-    )
-    
-    bold_style = ParagraphStyle(
-        'CustomBold',
-        parent=styles['Normal'],
-        fontSize=11,
-        spaceAfter=8,
-        fontName='Helvetica-Bold'
-    )
-    
-    # Build story
-    story = []
-    
-    # Title
-    story.append(Paragraph("NeuroScan AI - Medical Analysis Report", title_style))
-    story.append(Spacer(1, 20))
-    
-    # Patient Information
-    story.append(Paragraph("Patient Information", heading_style))
-    
-    patient_data = [
-        ["Patient ID:", patient_info.get("id", "N/A")],
-        ["Patient Name:", patient_info.get("name", "Not Specified")],
-        ["Referring Physician:", patient_info.get("physician", "Not Specified")],
-        ["Analysis Date:", detection['timestamp']]
-    ]
-    
-    patient_table = Table(patient_data, colWidths=[2*inch, 4*inch])
-    patient_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-    ]))
-    
-    story.append(patient_table)
-    story.append(Spacer(1, 20))
-    
-    # Diagnostic Summary
-    story.append(Paragraph("Diagnostic Summary", heading_style))
-    
-    # Risk badge
-    risk_color = {
-        "High": colors.red,
-        "Medium": colors.orange,
-        "Low": colors.green,
-        "None": colors.grey
-    }.get(detection['risk_level'], colors.black)
-    
-    summary_data = [
-        ["Primary Detection:", detection['class']],
-        ["Confidence Level:", f"{detection['overall_confidence']:.1f}%"],
-        ["Risk Assessment:", 
-         Paragraph(f"<font color='{risk_color.hexval()}'><b>{detection['risk_level']} Risk</b></font>", normal_style)],
-        ["Detected Regions:", str(len(detection['boxes']))]
-    ]
-    
-    summary_table = Table(summary_data, colWidths=[2*inch, 4*inch])
-    summary_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-    ]))
-    
-    story.append(summary_table)
-    story.append(Spacer(1, 20))
-    
-    # Imaging Findings
-    story.append(Paragraph("Imaging Findings", heading_style))
-    
-    if detection["boxes"]:
-        findings_text = f"Detected {len(detection['boxes'])} pathological region(s):"
-        story.append(Paragraph(findings_text, normal_style))
-        story.append(Spacer(1, 10))
-        
-        # Create table for findings
-        findings_data = [["Region", "Type", "Confidence", "Location"]]
-        for i, box in enumerate(detection["boxes"], 1):
-            findings_data.append([
-                f"Region {i}",
-                box['type'],
-                f"{box['confidence']:.1%}",
-                f"({box['x1']},{box['y1']})-({box['x2']},{box['y2']})"
-            ])
-        
-        findings_table = Table(findings_data, colWidths=[1*inch, 1.5*inch, 1.5*inch, 2*inch])
-        findings_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0066CC')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ]))
-        
-        story.append(findings_table)
-    else:
-        story.append(Paragraph("No pathological regions detected in the analyzed image.", normal_style))
-    
-    story.append(Spacer(1, 20))
-    
-    # Confidence Scores
-    story.append(Paragraph("Confidence Scores", heading_style))
-    
-    confidence_data = []
-    for class_name, score in detection["confidence_scores"].items():
-        if score > 0:
-            confidence_data.append([class_name, f"{score:.1f}%"])
-    
-    if confidence_data:
-        confidence_table = Table(confidence_data, colWidths=[3*inch, 3*inch])
-        confidence_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 11),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ]))
-        story.append(confidence_table)
-    
-    story.append(Spacer(1, 20))
-    
-    # Clinical Recommendations
-    story.append(Paragraph("Clinical Recommendations", heading_style))
-    
-    risk_level = detection["risk_level"]
-    if risk_level == "High":
-        recommendations = [
-            "• <b>Urgent neurosurgical consultation recommended</b>",
-            "• Further imaging (contrast-enhanced MRI) advised",
-            "• Consider immediate follow-up with oncology specialist",
-            "• Monitor for neurological deficits",
-            "• Consider hospital admission for close observation"
-        ]
-    elif risk_level == "Medium":
-        recommendations = [
-            "• <b>Schedule neurosurgical evaluation within 2 weeks</b>",
-            "• Consider follow-up MRI in 3-6 months",
-            "• Monitor for neurological symptoms",
-            "• Discuss treatment options with multidisciplinary team",
-            "• Consider neuropsychological assessment"
-        ]
-    elif risk_level == "Low":
-        recommendations = [
-            "• <b>Routine follow-up and monitoring recommended</b>",
-            "• Clinical correlation with symptoms advised",
-            "• Consider repeat imaging in 6-12 months",
-            "• Monitor for any changes in symptoms",
-            "• Consider consultation if symptoms develop"
-        ]
-    else:
-        recommendations = [
-            "• <b>Routine screening recommended</b>",
-            "• No immediate intervention required",
-            "• Clinical correlation as needed",
-            "• Continue with regular health maintenance",
-            "• Consider follow-up based on clinical presentation"
-        ]
-    
-    for rec in recommendations:
-        story.append(Paragraph(rec, normal_style))
-    
-    story.append(Spacer(1, 20))
-    
-    # Footer
-    footer_text = "This report was generated by NeuroScan AI - Brain Tumor Detection System. For clinical use only."
-    story.append(Paragraph(footer_text, ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=9,
-        textColor=colors.grey,
-        alignment=TA_CENTER,
-        spaceBefore=20
-    )))
-    
-    # Build PDF
-    doc.build(story)
-    
-    # Get PDF bytes
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    
-    return pdf_bytes
-
-
 def render_confidence_bars(confidence_scores: Dict[str, float]) -> None:
     """Render confidence scores with visual bars."""
     for class_name, score in confidence_scores.items():
@@ -774,14 +524,6 @@ def main() -> None:
                 '</div>',
                 unsafe_allow_html=True
             )
-        
-        # PDF status
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            pdf_status_class = "status-active" if PDF_AVAILABLE else "status-inactive"
-            st.markdown(f'<div class="status-indicator {pdf_status_class}"></div>', unsafe_allow_html=True)
-        with col2:
-            st.write(f"**PDF Reports:** {'✅ Available' if PDF_AVAILABLE else '⚠️ Text Only'}")
 
     tab1, tab2, tab3 = st.tabs(["Image Analysis", "Results Dashboard", "Clinical Report"])
 
@@ -923,60 +665,24 @@ def main() -> None:
             st.markdown(report_md, unsafe_allow_html=False)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Generate PDF report directly
-            if PDF_AVAILABLE:
-                try:
-                    # Generate PDF
-                    pdf_bytes = generate_pdf_report(
-                        st.session_state["yolo_results"],
-                        patient_info
-                    )
-                    
-                    # Generate filename
-                    patient_id = patient_info.get("id", "unknown")
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"neuroscan_report_{patient_id}_{timestamp}.pdf"
-                    
-                    # Single download button
-                    st.download_button(
-                        label="📄 Download PDF Report",
-                        data=pdf_bytes,
-                        file_name=filename,
-                        mime="application/pdf",
-                        type="primary",
-                        use_container_width=True
-                    )
-                    
-                except Exception as e:
-                    st.error(f"Failed to generate PDF: {e}")
-                    logger.exception("PDF generation error")
-            else:
-                # If PDF not available, provide text download
-                report_text = generate_text_report(st.session_state["yolo_results"], patient_info)
-                patient_id = patient_info.get("id", "unknown")
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"neuroscan_report_{patient_id}_{timestamp}.txt"
-                
+            b = report_md.encode("utf-8")
+            col1, col2 = st.columns(2)
+            with col1:
                 st.download_button(
-                    label="📄 Download Text Report",
-                    data=report_text.encode('utf-8'),
-                    file_name=filename,
-                    mime="text/plain",
-                    type="primary",
+                    "Download Report (Markdown)", 
+                    data=b, 
+                    file_name="neuroscan_report.md", 
+                    mime="text/markdown", 
                     use_container_width=True
                 )
-                
-                st.markdown(
-                    '''
-                    <div class="pdf-feature-box">
-                    <strong>💡 Enhanced PDF Reports:</strong><br>
-                    For professional PDF reports with tables and formatting, 
-                    install the required library by running: <code>pip install reportlab</code>
-                    </div>
-                    ''',
-                    unsafe_allow_html=True
+            with col2:
+                st.download_button(
+                    "Download Report (Text)", 
+                    data=b, 
+                    file_name="neuroscan_report.txt", 
+                    mime="text/plain", 
+                    use_container_width=True
                 )
-                
         else:
             st.markdown(
                 '<div class="empty-state">'
