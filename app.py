@@ -148,6 +148,30 @@ st.markdown("""
             background: linear-gradient(90deg, #0066CC, #009688);
             border-radius: 4px;
         }
+        .referring-physician-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .referring-physician-header {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        .patient-name {
+            font-size: 1.2rem;
+            color: #0066CC;
+            font-weight: 600;
+            margin: 5px 0;
+        }
+        .physician-name {
+            color: #2c3e50;
+            margin: 5px 0;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -335,11 +359,13 @@ def generate_text_report(analysis: Dict[str, Any], patient_info: Dict[str, Any])
     """Create comprehensive report using YOLO model results."""
     detection = analysis["detection"]
     patient_id = patient_info.get("id", "N/A")
+    patient_name = patient_info.get("name", "Not Specified")
     physician = patient_info.get("physician", "Not Specified")
     
     md = [
         "# Medical Analysis Report",
         f"**Patient ID:** {patient_id}",
+        f"**Patient Name:** {patient_name}",
         f"**Analysis Date:** {detection['timestamp']}",
         f"**Referring Physician:** {physician}",
         "## Diagnostic Summary",
@@ -417,6 +443,23 @@ def render_confidence_bars(confidence_scores: Dict[str, float]) -> None:
                 st.write(f"{score:.1f}%")
 
 
+def render_referring_physician_box(patient_info: Dict[str, Any]) -> None:
+    """Render the Referring Physician box with patient name."""
+    patient_name = patient_info.get("name", "Not Specified")
+    physician = patient_info.get("physician", "Not Specified")
+    
+    st.markdown(
+        f'''
+        <div class="referring-physician-box">
+            <div class="referring-physician-header">Referring Physician</div>
+            <div class="patient-name">{patient_name}</div>
+            <div class="physician-name">Physician: {physician}</div>
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
+
+
 def main() -> None:
     st.markdown('<div class="main-header">NeuroScan AI</div>', unsafe_allow_html=True)
     st.markdown(
@@ -439,6 +482,7 @@ def main() -> None:
         st.markdown('<div class="section-header">Patient Information</div>', unsafe_allow_html=True)
         with st.form("patient_form"):
             patient_id = st.text_input("Patient ID")
+            patient_name = st.text_input("Patient Name")
             patient_age = st.number_input("Age", min_value=0, max_value=120, value=45)
             patient_sex = st.selectbox("Sex", ["Male", "Female", "Other"])
             physician = st.text_input("Referring Physician")
@@ -446,11 +490,16 @@ def main() -> None:
             if submitted:
                 st.session_state["patient_info"] = {
                     "id": patient_id, 
+                    "name": patient_name,
                     "age": int(patient_age), 
                     "sex": patient_sex, 
                     "physician": physician
                 }
                 st.success("Patient information saved")
+        
+        # Display Referring Physician box
+        if "patient_info" in st.session_state and st.session_state["patient_info"]:
+            render_referring_physician_box(st.session_state["patient_info"])
 
         st.markdown("---")
         st.markdown('<div class="section-header">System Status</div>', unsafe_allow_html=True)
